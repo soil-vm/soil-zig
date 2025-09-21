@@ -32,7 +32,7 @@ fn name_by_number(number: u8) ?[]const u8 {
 
 pub fn check_struct(Syscalls: type) void {
     switch (@typeInfo(Syscalls)) {
-        .Struct => {},
+        .@"struct" => {},
         else => @compileError("Syscall struct has to be a struct."),
     }
 
@@ -55,7 +55,7 @@ pub fn check_struct(Syscalls: type) void {
 
 pub fn check_syscall_signature(Syscalls: type, name: []const u8) void {
     const signature = switch (@typeInfo(@TypeOf(@field(Syscalls, name)))) {
-        .Fn => |f| f,
+        .@"fn" => |f| f,
         else => return,
     };
 

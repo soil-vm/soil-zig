@@ -19,7 +19,7 @@
 
 const std = @import("std");
 const Alloc = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const ArrayList = std.ArrayListUnmanaged;
 const MachineCode = @import("machine_code.zig");
 const Vm = @import("vm.zig");
 const File = @import("../file.zig");
@@ -50,7 +50,7 @@ pub fn compile(alloc: Alloc, file: File, syscalls: type) !Vm {
 }
 
 const CompiledCode = struct {
-    machine_code: []align(std.mem.page_size) u8,
+    machine_code: []align(std.heap.page_size_min) u8,
     byte_to_machine_code: []usize,
     machine_to_byte_code: []usize,
 };
@@ -58,8 +58,8 @@ fn compile_byte_code(input: []const u8, alloc: Alloc, syscalls: type) !CompiledC
     var machine_code = try MachineCode.init(alloc);
 
     // Mappings between offsets.
-    var byte_to_machine_code = ArrayList(usize).init(alloc);
-    var machine_to_byte_code = ArrayList(usize).init(alloc);
+    var byte_to_machine_code = ArrayList(usize){};
+    var machine_to_byte_code = ArrayList(usize){};
 
     var rest = input;
     while (rest.len > 0) {
@@ -73,9 +73,9 @@ fn compile_byte_code(input: []const u8, alloc: Alloc, syscalls: type) !CompiledC
         const machine_code_offset_after = machine_code.len;
 
         while (byte_to_machine_code.items.len < byte_code_offset_after)
-            try byte_to_machine_code.append(machine_code_offset);
+            try byte_to_machine_code.append(alloc, machine_code_offset);
         while (machine_to_byte_code.items.len < machine_code_offset_after)
-            try machine_to_byte_code.append(byte_code_offset);
+            try machine_to_byte_code.append(alloc, byte_code_offset);
     }
 
     for (machine_code.patches.items) |patch| {
@@ -219,7 +219,7 @@ fn compile_to_machine_code(instruction: ByteCode.Instruction, machine_code: *Mac
                     // c (r12)  -> arg 4 (rcx)
                     // d (r13)  -> arg 5 (r8)
                     // e (r14)  -> arg 6 (r9)
-                    const signature = @typeInfo(@TypeOf(fun)).Fn;
+                    const signature = @typeInfo(@TypeOf(fun)).@"fn";
                     const num_args = signature.params.len;
                     if (num_args >= 1) try machine_code.emit_mov_rdi_rbx();
                     if (num_args >= 2) try machine_code.emit_mov_rsi_r10();

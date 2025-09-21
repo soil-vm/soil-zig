@@ -1,10 +1,11 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
-const File = @import("../file.zig");
 const options = @import("root").vm_options;
 
+const File = @import("../file.zig");
+
 byte_code: []const u8,
-machine_code: []align(std.mem.page_size) u8,
+machine_code: []align(std.heap.page_size_min) u8,
 machine_code_ptr: [*]u8,
 byte_to_machine_code: []usize,
 machine_to_byte_code: []usize,
@@ -47,7 +48,18 @@ fn actual_run(vm: *@This()) void {
           [mem_size] "{r8}" (mem_size),
           [mem_base] "{rbp}" (mem_base),
           [vm_ptr] "{rbx}" (vm_ptr),
-        : "memory", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "rcx", "rsi", "rdi"
-    );
+        : .{
+          .memory = true,
+          .r9 = true,
+          .r10 = true,
+          .r11 = true,
+          .r12 = true,
+          .r13 = true,
+          .r14 = true,
+          .r15 = true,
+          .rcx = true,
+          .rsi = true,
+          .rdi = true,
+        });
     std.process.exit(0);
 }

@@ -28,9 +28,7 @@ pub const Reg = enum {
         return @as(u8, @intFromEnum(self));
     }
 
-    pub fn format(self: Reg, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Reg, writer: anytype) !void {
         try writer.print("{s}", .{@tagName(self)});
     }
 };
@@ -86,10 +84,8 @@ pub const Instruction = union(enum) {
     xor: Regs,
     not: Reg,
 
-    pub fn format(self: Instruction, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        const info = @typeInfo(Instruction).Union;
+    pub fn format(self: Instruction, writer: anytype) !void {
+        const info = @typeInfo(Instruction).@"union";
         inline for (info.fields) |field| {
             if (info.tag_type) |tag_type| {
                 if (self == @field(tag_type, field.name)) {
@@ -99,10 +95,10 @@ pub const Instruction = union(enum) {
                         void => {},
                         u8 => try writer.print(" {}", .{payload}),
                         usize => try writer.print(" {}", .{payload}),
-                        Reg => try writer.print(" {}", .{payload}),
-                        Regs => try writer.print(" {} {}", .{ payload.a, payload.b }),
-                        RegAndWord => try writer.print(" {} {}", .{ payload.reg, payload.word }),
-                        RegAndByte => try writer.print(" {} {}", .{ payload.reg, payload.byte }),
+                        Reg => try writer.print(" {f}", .{payload}),
+                        Regs => try writer.print(" {f} {f}", .{ payload.a, payload.b }),
+                        RegAndWord => try writer.print(" {f} {}", .{ payload.reg, payload.word }),
+                        RegAndByte => try writer.print(" {f} {}", .{ payload.reg, payload.byte }),
                         else => unreachable,
                     }
                 }

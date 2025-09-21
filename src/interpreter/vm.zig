@@ -1,16 +1,17 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-const File = @import("../file.zig");
+const ArrayList = std.ArrayListUnmanaged;
+const options = @import("root").vm_options;
+
 const ByteCode = @import("../byte_code.zig");
 const Reg = ByteCode.Reg;
 const Regs = ByteCode.Regs;
 const Instruction = ByteCode.Instruction;
 const RegAndWord = ByteCode.RegAndWord;
 const RegAndByte = ByteCode.RegAndByte;
+const File = @import("../file.zig");
 const parse_instruction = @import("../parsing.zig").parse_instruction;
 const Syscall = @import("../syscall.zig");
-const options = @import("root").vm_options;
 
 byte_code: []const u8,
 ip: usize,
@@ -18,6 +19,7 @@ regs: [8]i64,
 memory: []u8,
 call_stack: ArrayList(usize),
 try_stack: ArrayList(TryScope),
+alloc: Alloc,
 labels: File.Labels,
 
 pub const TryScope = packed struct {
@@ -34,8 +36,9 @@ pub fn init(alloc: Alloc, file: File) !Self {
         .ip = 0,
         .regs = [_]i64{0} ** 8,
         .memory = try alloc.alloc(u8, options.memory_size),
-        .call_stack = ArrayList(usize).init(alloc),
-        .try_stack = ArrayList(TryScope).init(alloc),
+        .call_stack = ArrayList(usize){},
+        .try_stack = ArrayList(TryScope){},
+        .alloc = alloc,
         .labels = file.labels,
     };
     vm.set_int(.sp, options.memory_size);
@@ -93,17 +96,13 @@ fn run_single(vm: *Self, Syscalls: type) !void {
     vm.ip += (len_before - len_after);
     if (options.trace_registers) {
         for (vm.call_stack.items) |_| std.debug.print(" ", .{});
-        std.debug.print(
-            "{}\t",
-            .{
-                instruction,
-            },
-        );
+        std.debug.print("{f}\t", .{instruction});
     }
     switch (instruction) {
         .nop => {},
         .panic => if (vm.try_stack.items.len > 0) {
-            const try_ = vm.try_stack.pop();
+            const try_ = vm.try_stack.items[vm.try_stack.items.len - 1];
+            vm.try_stack.items.len -= 1;
             vm.call_stack.items.len = try_.call_stack_len;
             vm.set_int(.sp, try_.sp);
             vm.ip = try_.catch_;
@@ -114,12 +113,12 @@ fn run_single(vm: *Self, Syscalls: type) !void {
             unreachable;
             // return error.Panicked;
         },
-        .trystart => |catch_| try vm.try_stack.append(.{
+        .trystart => |catch_| try vm.try_stack.append(vm.alloc, .{
             .call_stack_len = vm.call_stack.items.len,
             .sp = vm.get_int(.sp),
             .catch_ = catch_,
         }),
-        .tryend => _ = vm.try_stack.pop(),
+        .tryend => vm.try_stack.items.len -= 1,
         .move => |regs| vm.set_int(regs.a, vm.get_int(regs.b)),
         .movei => |args| vm.set_int(args.reg, args.word),
         .moveib => |args| vm.set_int(args.reg, @intCast(args.byte)),
@@ -147,7 +146,7 @@ fn run_single(vm: *Self, Syscalls: type) !void {
         },
         .call => |target| {
             const return_target = vm.ip;
-            try vm.call_stack.append(return_target);
+            try vm.call_stack.append(vm.alloc, return_target);
             vm.ip = target;
 
             if (options.trace_calls) {
@@ -159,13 +158,16 @@ fn run_single(vm: *Self, Syscalls: type) !void {
                 }
             }
         },
-        .ret => vm.ip = vm.call_stack.pop(),
+        .ret => {
+            vm.ip = vm.call_stack.items[vm.call_stack.items.len - 1];
+            vm.call_stack.items.len -= 1;
+        },
         .syscall => |number| {
             @setEvalBranchQuota(2000000);
             switch (number) {
                 inline else => |n| {
                     const fun = Syscall.by_number(Syscalls, n);
-                    const signature = @typeInfo(@TypeOf(fun)).Fn;
+                    const signature = @typeInfo(@TypeOf(fun)).@"fn";
 
                     const result = switch (signature.params.len) {
                         1 => fun(vm),

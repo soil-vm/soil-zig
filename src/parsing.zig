@@ -1,6 +1,6 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const ArrayList = std.ArrayListUnmanaged;
 const ByteCode = @import("byte_code.zig");
 const File = @import("file.zig");
 
@@ -29,12 +29,12 @@ fn parse_magic_byte(input: *[]const u8, expected: u8) !void {
 
 fn parse_labels(input: *[]const u8, alloc: Alloc) !File.Labels {
     const count: usize = @intCast(try parse_word(input));
-    var labels_to_offset = ArrayList(File.LabelAndOffset).init(alloc);
+    var labels_to_offset = ArrayList(File.LabelAndOffset){};
     for (0..count) |_| {
         const offset: usize = try parse_usize(input);
         const label_len: usize = try parse_usize(input);
         const label = try parse_amount(input, label_len);
-        try labels_to_offset.append(.{ .offset = offset, .label = label });
+        try labels_to_offset.append(alloc, .{ .offset = offset, .label = label });
     }
     return .{ .labels = labels_to_offset.items };
 }

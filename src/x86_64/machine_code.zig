@@ -2,13 +2,16 @@
 
 const std = @import("std");
 const Alloc = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const ArrayList = std.ArrayListUnmanaged;
+
 const Reg = @import("../byte_code.zig").Reg;
+
 const Self = @This();
 
-buffer: []align(std.mem.page_size) u8,
+buffer: []align(std.heap.page_size_min) u8,
 len: usize,
 patches: ArrayList(Patch),
+alloc: Alloc,
 
 const Patch = struct {
     where: usize,
@@ -21,9 +24,10 @@ const PatchTarget = union(enum) {
 
 pub fn init(alloc: Alloc) !Self {
     var machine_code = Self{
-        .buffer = try allocate_memory_at_a_small_address(10000 * std.mem.page_size),
+        .buffer = try allocate_memory_at_a_small_address(100000 * std.heap.page_size_min),
         .len = 0,
-        .patches = ArrayList(Patch).init(alloc),
+        .patches = ArrayList(Patch){},
+        .alloc = alloc,
     };
     if (false) {
         try machine_code.emit_infinite_loop();
@@ -34,12 +38,12 @@ pub fn init(alloc: Alloc) !Self {
 // Well, here the trouble begins. Any old allocator won't work for us because the jmp instruction
 // can only jump 2^32 bytes forward or backwards (without resorting to such hacks as memory-indirect
 // jumps). Thus, we perform our own mmap to allocate memory at a small address.
-fn allocate_memory_at_a_small_address(len: usize) ![]align(std.mem.page_size) u8 {
-    var page: usize = @intFromPtr(&allocate_memory_at_a_small_address) / std.mem.page_size;
+fn allocate_memory_at_a_small_address(len: usize) ![]align(std.heap.page_size_min) u8 {
+    var page: usize = @intFromPtr(&allocate_memory_at_a_small_address) / std.heap.page_size_min;
     while (true) {
         page += 1;
         const address = std.os.linux.mmap(
-            @ptrFromInt(page * std.mem.page_size), // hint: small address, please!
+            @ptrFromInt(page * std.heap.page_size_min), // hint: small address, please!
             len,
             std.os.linux.PROT.READ | std.os.linux.PROT.WRITE,
             .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
@@ -47,7 +51,7 @@ fn allocate_memory_at_a_small_address(len: usize) ![]align(std.mem.page_size) u8
             0,
         );
         if (address == 0) return error.OutOfMemory;
-        const ptr = @as([*]align(std.mem.page_size) u8, @ptrFromInt(address));
+        const ptr = @as([*]align(std.heap.page_size_min) u8, @ptrFromInt(address));
 
         // std.debug.print("page {}: mmap result is {x}.\n", .{ page, address });
         if (address < std.math.pow(usize, 2, 32)) {
@@ -75,11 +79,11 @@ fn emit_word(self: *Self, value: i64) !void {
 }
 
 fn emit_absolute_patch(self: *Self, target: usize) !void {
-    try self.patches.append(.{ .where = self.len, .target = .{ .absolute = target } });
+    try self.patches.append(self.alloc, .{ .where = self.len, .target = .{ .absolute = target } });
     try self.reserve(4);
 }
 fn emit_relative_patch(self: *Self, target: usize) !void {
-    try self.patches.append(.{ .where = self.len, .target = .{ .relative = target } });
+    try self.patches.append(self.alloc, .{ .where = self.len, .target = .{ .relative = target } });
     try self.reserve(4);
 }
 fn emit_relative_comptime(self: *Self, target: usize) !void {

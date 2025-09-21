@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
     // });
     // b.installArtifact(lib);
 
-    const raylib_dep = b.dependency("raylib-zig", .{
+    const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
     });
@@ -24,9 +24,11 @@ pub fn build(b: *std.Build) void {
     // Execute command
     const exe = b.addExecutable(.{
         .name = "soil-zig",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
@@ -44,16 +46,16 @@ pub fn build(b: *std.Build) void {
 
     // Unit testing
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = exe.root_module,
     });
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
